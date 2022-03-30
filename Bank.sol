@@ -35,7 +35,7 @@ contract MiniBank {
     modifier onlyOwner() {
         require(
             owner == msg.sender,
-            "Only the bank owner can perform this action"
+            "You are not allowed to perform this action"
         );
         _;
     }
@@ -45,14 +45,34 @@ contract MiniBank {
         _;
     }
 
-    function createAccount(address newCustomer) public onlyOwner {
+    modifier closeAccountPermission(address customer) {
+        require(
+            owner == msg.sender || msg.sender == customer,
+            "You are not allowed to perform this action"
+        );
+        _;
+    }
+
+    modifier accountAlreadyExists(address newCustomer) {
+        require(
+            !account[newCustomer].haveAccount,
+            "Customer already has an account"
+        );
+        _;
+    }
+
+    function createAccount(address newCustomer)
+        public
+        onlyOwner
+        accountAlreadyExists(newCustomer)
+    {
         account[newCustomer].haveAccount = true;
     }
 
     function closeAccount(address customer)
         public
-        onlyOwner
         verifyAccountExists
+        closeAccountPermission(customer)
     {
         account[customer].haveAccount = false;
     }
@@ -75,19 +95,29 @@ contract MiniBank {
         payable(msg.sender).transfer(this.convertEth2Wei(amountInEther));
     }
 
+    function fetchBenficaryBalance(address benefactor)
+        public
+        view
+        returns (uint256)
+    {
+        return account[benefactor].allowance[msg.sender];
+    }
+
     function beneficiaryWithdrawal(uint256 amountInEther, address benefactor)
         public
     {
         require(
-            account[benefactor].allowance[msg.sender] >
-                this.convertEth2Wei(amountInEther),
-            "Withdrawal operation failed..."
+            account[benefactor].allowance[msg.sender] > amountInEther,
+            "Threshold balance reached"
         );
         require(
-            account[benefactor].balance >= amountInEther,
+            account[benefactor].balance > amountInEther,
             "Balance in the account is too low for this withdrawal"
         );
         account[benefactor].balance -= this.convertEth2Wei(amountInEther);
+        account[benefactor].allowance[msg.sender] -= this.convertEth2Wei(
+            amountInEther
+        );
         emit Withdraw(msg.sender, this.convertEth2Wei(amountInEther));
         payable(msg.sender).transfer(this.convertEth2Wei(amountInEther));
     }
@@ -96,7 +126,7 @@ contract MiniBank {
         uint256 maxAmountToWithdrawInEther,
         address beneficiary
     ) public verifyAccountExists {
-        account[msg.sender].allowance[beneficiary] = this.convertEth2Wei(
+        account[msg.sender].allowance[beneficiary] += this.convertEth2Wei(
             maxAmountToWithdrawInEther
         );
         emit UpdateAccountMaxAmountToBeneficiaries(
